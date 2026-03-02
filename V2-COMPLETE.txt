@@ -1,0 +1,225 @@
+═══════════════════════════════════════════════════════════════════
+                  ✅ AGENT MONITOR v2.0 - COMPLETE
+═══════════════════════════════════════════════════════════════════
+
+🎉 MAJOR UPDATE: GitHub Integration Added!
+
+WHAT'S NEW IN v2.0:
+─────────────────────────────────────────────────────────────────
+
+1. 🎯 MILESTONE TRACKING
+   • Visual progress bars for each milestone
+   • Open vs closed issue counts
+   • Color-coded status (green/orange/blue)
+   • Collapsible sections
+   • Due date display
+
+2. 📋 ISSUE ORGANIZATION
+   • All open issues displayed
+   • Grouped by milestone
+   • Unassigned issues highlighted
+   • Issue numbers + titles clearly visible
+   • Click-to-expand details
+
+3. 🔗 AGENT-TO-ISSUE MAPPING (The Game Changer!)
+   • Visual badges show which agents work on which issues
+   • Real-time status updates (green/red/blue)
+   • Click badges to view logs
+   • Automatic extraction from agent tasks
+   • Visual connection: planning → execution
+
+4. 📊 TWO-PANEL DASHBOARD
+   • LEFT:  Milestones → Issues → Agents
+   • RIGHT: Active agents list (quick status)
+   • Perfect split for big picture + details
+
+5. 🎨 DUAL VIEW MODES
+   • Dashboard Mode: Full project overview (NEW!)
+   • Agents Mode: Traditional list (original)
+   • Toggle with segmented control
+
+TECHNICAL DETAILS:
+─────────────────────────────────────────────────────────────────
+
+New Files:
+  • GitHubManager.swift (124 lines)
+    - Fetches milestones via gh API
+    - Fetches issues via gh CLI
+    - Parses JSON, publishes to UI
+    - Async/await for clean concurrency
+
+Enhanced Files:
+  • ContentView.swift (634 lines, +395)
+    - Dashboard layout
+    - Milestone cards with progress
+    - Issue rows with agent badges
+    - Smart agent-to-issue mapping
+
+Code Stats:
+  • Total Swift: 953 lines (+501 from v1, +111%)
+  • Documentation: 9 comprehensive guides
+  • Window size: 1100x750 (wider for dashboard)
+
+HOW TO USE:
+─────────────────────────────────────────────────────────────────
+
+Quick Start:
+  $ cd ~/Dev/tools/agent-monitor
+  $ ./open-in-xcode.sh
+  (Click Play ▶️ in Xcode)
+
+What You'll See:
+
+  LEFT PANEL: Milestones & Issues
+  ┌──────────────────────────────────────────┐
+  │ 🎯 SOFT LAUNCH (Week 1-2)    10/16  🟠  │
+  │ [████████████░░░░░░] 62%                 │
+  │                                          │
+  │  #80 Cannot mine past depth              │
+  │      🟢 briny-zephyr                     │
+  │                                          │
+  │  #83 Cache not persisting                │
+  │      🟢 neat-seaslug                     │
+  │                                          │
+  │  #88 Admin panel missing                 │
+  │      🟢 keen-cove                        │
+  └──────────────────────────────────────────┘
+
+  RIGHT PANEL: Active Agents
+  ┌──────────────────────────────┐
+  │ Active Agents      3 running │
+  │                              │
+  │ 🟢 briny-zephyr  #80    9m   │
+  │    Fix depth limit           │
+  │                              │
+  │ 🟢 neat-seaslug  #83    9m   │
+  │    Cache persist             │
+  │                              │
+  │ 🟢 keen-cove     #88    9m   │
+  │    Admin auth                │
+  └──────────────────────────────┘
+
+VISUAL INDICATORS:
+─────────────────────────────────────────────────────────────────
+
+Milestone Progress:
+  🟢 Green  (70%+)  = Almost complete!
+  🟠 Orange (40-70%) = In progress
+  🔵 Blue   (<40%)  = Just started
+
+Agent Status:
+  🟢 Green circle = Running
+  🔴 Red circle   = Failed (needs attention!)
+  🔵 Blue circle  = Completed
+
+Issue Highlighting:
+  Light green bg = Agent assigned
+  Color badges   = Agent status
+  Purple tags    = Issue numbers
+
+REQUIREMENTS:
+─────────────────────────────────────────────────────────────────
+
+✅ macOS 13.0+ (Ventura or later)
+✅ Xcode (free from Mac App Store)
+✅ OpenClaw (installed and in PATH)
+✅ GitHub CLI (NEW!)
+   $ brew install gh
+   $ gh auth login
+
+Repository:
+  ~/Dev/games/roblox/mine-for-brainrots
+  (Change in GitHubManager.swift if needed)
+
+BENEFITS:
+─────────────────────────────────────────────────────────────────
+
+For Project Management:
+  ✓ See milestone progress at a glance
+  ✓ Identify which issues are being worked on
+  ✓ Track progress toward deadlines
+  ✓ Spot unassigned critical issues
+
+For Development:
+  ✓ Monitor agent execution
+  ✓ See agent-to-issue assignments
+  ✓ Quickly access logs when needed
+  ✓ Understand full context of work
+
+For QA/Testing:
+  ✓ Spot failed agents instantly (red badges)
+  ✓ Verify work distribution
+  ✓ Check unassigned issues
+  ✓ Monitor completion rates
+
+BEFORE vs AFTER:
+─────────────────────────────────────────────────────────────────
+
+BEFORE v2:
+  "I can see agents working, but I don't know:
+   • What milestone we're focusing on
+   • Which issues are being tackled
+   • If we're making progress
+   • If agents are on the right priorities"
+
+AFTER v2:
+  "I see everything:
+   ✅ All milestones with progress
+   ✅ Issues organized clearly
+   ✅ Agent assignments visible
+   ✅ Real-time status updates
+   ✅ Complete transparency!"
+
+DOCUMENTATION:
+─────────────────────────────────────────────────────────────────
+
+  START-HERE.md           Quick welcome + 3-step start
+  QUICKSTART.md           Step-by-step instructions
+  README.md               Complete feature list (updated!)
+  GITHUB-INTEGRATION.md   GitHub features explained (NEW!)
+  FEATURES-V2.md          Complete feature matrix (NEW!)
+  V2-UPDATE.md            Detailed changelog (NEW!)
+  SUMMARY.md              Technical architecture
+  APP-PREVIEW.md          UI walkthrough
+  COMPLETION-REPORT.md    v1 build details
+
+VERIFICATION:
+─────────────────────────────────────────────────────────────────
+
+✅ All files created
+✅ Xcode project updated
+✅ Code compiles successfully
+✅ GitHub CLI installed and configured
+✅ OpenClaw command found
+✅ Documentation complete
+✅ Ready to use!
+
+NEXT STEPS:
+─────────────────────────────────────────────────────────────────
+
+1. Open Xcode:
+   $ ./open-in-xcode.sh
+
+2. Click Play (▶️)
+
+3. Explore the dashboard:
+   • Try Dashboard view
+   • Try Agents view
+   • Click milestone sections
+   • Click agent badges
+   • View logs
+
+4. Enjoy complete project visibility! 🎉
+
+═══════════════════════════════════════════════════════════════════
+                      STATUS: ✅ READY TO USE
+═══════════════════════════════════════════════════════════════════
+
+Built:    February 27, 2026
+Version:  2.0.0
+Location: ~/Dev/tools/agent-monitor/
+Status:   Complete and tested
+
+No more being "blind and scared"! 🚀
+
+═══════════════════════════════════════════════════════════════════

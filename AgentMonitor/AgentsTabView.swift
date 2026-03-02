@@ -3,6 +3,8 @@ import SwiftUI
 struct AgentsTabView: View {
     @ObservedObject var monitor: AgentMonitor
     let onAgentTap: (AgentSession) -> Void
+    var onCloseAndNext: ((AgentSession) -> Void)?
+    var onCloseIssue: ((AgentSession) -> Void)?
 
     @State private var showingNewAgent = false
     @State private var newPrompt = ""
@@ -115,7 +117,23 @@ struct AgentsTabView: View {
                         AgentCard(
                             session: session,
                             onTap: { onAgentTap(session) },
-                            onStop: session.status == .running ? { monitor.stopAgent(sessionId: session.id) } : nil
+                            onStop: session.status == .running ? { monitor.stopAgent(sessionId: session.id) } : nil,
+                            onFollowUp: { prompt in
+                                monitor.sendFollowUp(sessionId: session.id, prompt: prompt)
+                            },
+                            onDismiss: session.status != .running ? {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    monitor.removeSession(id: session.id)
+                                }
+                            } : nil,
+                            onCloseIssue: session.issue != nil && session.status == .completed ? {
+                                onCloseIssue?(session)
+                                removeAndShowPrompt(session)
+                            } : nil,
+                            onCloseAndNext: session.issue != nil && session.status == .completed ? {
+                                onCloseAndNext?(session)
+                                removeAndShowPrompt(session)
+                            } : nil
                         )
                     }
 
@@ -149,6 +167,16 @@ struct AgentsTabView: View {
         newPrompt = ""
         withAnimation(.easeInOut(duration: 0.2)) {
             showingNewAgent = false
+        }
+    }
+
+    private func removeAndShowPrompt(_ session: AgentSession) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            monitor.removeSession(id: session.id)
+            showingNewAgent = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            promptFocused = true
         }
     }
 }

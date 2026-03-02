@@ -5,6 +5,7 @@ struct LogView: View {
     @ObservedObject var monitor: AgentMonitor
     @Environment(\.dismiss) var dismiss
     @State private var followUpPrompt = ""
+    @State private var showingDiff = false
 
     private var session: AgentSession? {
         monitor.sessions.first { $0.id == sessionId }
@@ -61,6 +62,15 @@ struct LogView: View {
                             .cornerRadius(6)
                     }
 
+                    if session.diffOutput != nil {
+                        Picker("", selection: $showingDiff) {
+                            Text("Output").tag(false)
+                            Text("Diff").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 140)
+                    }
+
                     if session.status == .running {
                         Button(action: { monitor.stopAgent(sessionId: sessionId) }) {
                             Label("Stop", systemImage: "stop.fill")
@@ -78,43 +88,47 @@ struct LogView: View {
 
                 Divider()
 
-                // Output
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(session.outputLines) { line in
-                                OutputLineView(line: line)
-                                    .id(line.id)
-                            }
-
-                            if session.outputLines.isEmpty {
-                                HStack {
-                                    Spacer()
-                                    VStack(spacing: 12) {
-                                        ProgressView()
-                                            .scaleEffect(0.8)
-                                        Text("Waiting for output...")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .padding(.top, 40)
-                                    Spacer()
+                // Output or Diff
+                if showingDiff, let diffText = session.diffOutput {
+                    DiffView(diffText: diffText)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(session.outputLines) { line in
+                                    OutputLineView(line: line)
+                                        .id(line.id)
                                 }
-                            }
 
-                            // Invisible anchor at bottom
-                            Color.clear.frame(height: 1).id("bottom")
+                                if session.outputLines.isEmpty {
+                                    HStack {
+                                        Spacer()
+                                        VStack(spacing: 12) {
+                                            ProgressView()
+                                                .scaleEffect(0.8)
+                                            Text("Waiting for output...")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.top, 40)
+                                        Spacer()
+                                    }
+                                }
+
+                                // Invisible anchor at bottom
+                                Color.clear.frame(height: 1).id("bottom")
+                            }
+                            .padding()
                         }
-                        .padding()
-                    }
-                    .background(Color(NSColor.textBackgroundColor))
-                    .onChange(of: session.outputLines.count) { _ in
-                        withAnimation(.easeOut(duration: 0.1)) {
+                        .background(Color(NSColor.textBackgroundColor))
+                        .onChange(of: session.outputLines.count) { _ in
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                proxy.scrollTo("bottom", anchor: .bottom)
+                            }
+                        }
+                        .onAppear {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }
-                    }
-                    .onAppear {
-                        proxy.scrollTo("bottom", anchor: .bottom)
                     }
                 }
 

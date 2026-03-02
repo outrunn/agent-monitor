@@ -7,14 +7,35 @@ class AgentMonitor: ObservableObject {
     @Published var lastUpdate: Date = Date()
 
     let project: Project
+    var onSessionFinished: ((AgentSession) -> Void)?
     private var processes: [String: Process] = [:]
     private var durationTimer: Timer?
+    private let sessionStore: SessionStore
+    private var outputSaveTimer: Timer?
+    private var dirtySessionIds: Set<String> = []
 
     init(project: Project) {
         self.project = project
-        // Timer to update durations for running sessions
+        self.sessionStore = SessionStore(projectId: project.id)
+
+        // Load persisted sessions
+        var loaded = sessionStore.loadSessions()
+        // Flip any running sessions to interrupted (they were running when app died)
+        for i in loaded.indices {
+            if loaded[i].status == .running {
+                loaded[i].status = .interrupted
+            }
+        }
+        self.sessions = loaded
+        if !loaded.isEmpty {
+            sessionStore.saveMetadata(loaded)
+        }
+
+        NotificationManager.shared.requestPermission()
+
         DispatchQueue.main.async { [weak self] in
             self?.startDurationTimer()
+            self?.startOutputSaveTimer()
         }
     }
 
@@ -28,14 +49,41 @@ class AgentMonitor: ObservableObject {
         }
     }
 
+    private func startOutputSaveTimer() {
+        outputSaveTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.flushDirtyOutputs()
+        }
+    }
+
+    private func flushDirtyOutputs() {
+        let ids = dirtySessionIds
+        dirtySessionIds.removeAll()
+        for id in ids {
+            if let session = sessions.first(where: { $0.id == id }) {
+                sessionStore.saveOutputLines(sessionId: id, lines: session.outputLines)
+            }
+        }
+    }
+
+    private func persistMetadata() {
+        sessionStore.saveMetadata(sessions)
+    }
+
+    private func markOutputDirty(_ sessionId: String) {
+        dirtySessionIds.insert(sessionId)
+    }
+
     // MARK: - Launch Agent
 
     func launchAgent(prompt: String) {
-        let session = AgentSession(prompt: prompt)
+        var session = AgentSession(prompt: prompt, projectId: project.id)
+        session.projectId = project.id
         sessions.insert(session, at: 0)
         isLoading = true
+        persistMetadata()
 
         let process = Process()
+        configureProcess(process)
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [
             "claude",
@@ -54,17 +102,14 @@ class AgentMonitor: ObservableObject {
         let sessionId = session.id
         processes[sessionId] = process
 
-        // Read stdout on background thread
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.readOutput(pipe: outPipe, sessionId: sessionId)
         }
 
-        // Read stderr for errors
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.readStderr(pipe: errPipe, sessionId: sessionId)
         }
 
-        // Handle process termination
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
                 guard let self = self else { return }
@@ -73,12 +118,19 @@ class AgentMonitor: ObservableObject {
                         self.sessions[idx].status = proc.terminationStatus == 0 ? .completed : .failed
                     }
                     self.sessions[idx].lastActivity = Date()
+                    // Flush output immediately on completion
+                    self.sessionStore.saveOutputLines(sessionId: sessionId, lines: self.sessions[idx].outputLines)
+                    self.dirtySessionIds.remove(sessionId)
+                    self.onSessionFinished?(self.sessions[idx])
+
+                    NSSound(named: "Glass")?.play()
+                    NotificationManager.shared.notify(session: self.sessions[idx])
                 }
                 self.processes.removeValue(forKey: sessionId)
                 self.isLoading = self.processes.values.contains { $0.isRunning }
                 self.lastUpdate = Date()
-
-                NSSound(named: "Glass")?.play()
+                self.persistMetadata()
+                self.captureDiff(sessionId: sessionId)
             }
         }
 
@@ -95,6 +147,7 @@ class AgentMonitor: ObservableObject {
             }
             processes.removeValue(forKey: sessionId)
             isLoading = false
+            persistMetadata()
         }
     }
 
@@ -110,8 +163,11 @@ class AgentMonitor: ObservableObject {
             type: "system",
             content: "Follow-up: \(prompt)"
         ))
+        persistMetadata()
+        markOutputDirty(sessionId)
 
         let process = Process()
+        configureProcess(process)
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [
             "claude",
@@ -147,10 +203,17 @@ class AgentMonitor: ObservableObject {
                         self.sessions[idx].status = proc.terminationStatus == 0 ? .completed : .failed
                     }
                     self.sessions[idx].lastActivity = Date()
+                    self.sessionStore.saveOutputLines(sessionId: internalId, lines: self.sessions[idx].outputLines)
+                    self.dirtySessionIds.remove(internalId)
+                    self.onSessionFinished?(self.sessions[idx])
+
+                    NSSound(named: "Glass")?.play()
+                    NotificationManager.shared.notify(session: self.sessions[idx])
                 }
                 self.processes.removeValue(forKey: internalId)
                 self.isLoading = self.processes.values.contains { $0.isRunning }
-                NSSound(named: "Glass")?.play()
+                self.persistMetadata()
+                self.captureDiff(sessionId: internalId)
             }
         }
 
@@ -162,6 +225,7 @@ class AgentMonitor: ObservableObject {
             sessions[idx].outputLines.append(AgentSession.OutputLine(
                 timestamp: Date(), type: "error", content: "Failed to resume: \(error.localizedDescription)"
             ))
+            persistMetadata()
         }
     }
 
@@ -171,6 +235,20 @@ class AgentMonitor: ObservableObject {
         if let process = processes[sessionId], process.isRunning {
             process.terminate()
         }
+    }
+
+    // MARK: - Remove Session
+
+    func removeSession(id: String) {
+        sessions.removeAll { $0.id == id }
+        persistMetadata()
+    }
+
+    // MARK: - Clear Completed Sessions
+
+    func clearCompleted() {
+        sessions.removeAll { $0.status == .completed || $0.status == .failed || $0.status == .interrupted }
+        persistMetadata()
     }
 
     // MARK: - Output Reading
@@ -213,7 +291,6 @@ class AgentMonitor: ObservableObject {
     private func processJSONLine(_ line: String, sessionId: String) {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            // Non-JSON output, show as plain text
             DispatchQueue.main.async { [weak self] in
                 self?.appendOutput(sessionId: sessionId, type: "assistant", content: line)
             }
@@ -224,7 +301,6 @@ class AgentMonitor: ObservableObject {
 
         switch type {
         case "assistant":
-            // Extract text from message content blocks
             if let message = json["message"] as? [String: Any],
                let content = message["content"] as? [[String: Any]] {
                 for block in content {
@@ -237,7 +313,6 @@ class AgentMonitor: ObservableObject {
                     }
                 }
             }
-            // Capture session_id
             if let sid = json["session_id"] as? String {
                 DispatchQueue.main.async { [weak self] in
                     self?.updateSessionId(internalId: sessionId, claudeSessionId: sid)
@@ -273,7 +348,6 @@ class AgentMonitor: ObservableObject {
             }
 
         case "tool_result":
-            // Skip verbose tool results
             break
 
         case "result":
@@ -286,6 +360,7 @@ class AgentMonitor: ObservableObject {
                 DispatchQueue.main.async { [weak self] in
                     if let self = self, let idx = self.sessions.firstIndex(where: { $0.id == sessionId }) {
                         self.sessions[idx].costUSD = cost
+                        self.persistMetadata()
                     }
                 }
             }
@@ -296,6 +371,7 @@ class AgentMonitor: ObservableObject {
                     self?.appendOutput(sessionId: sessionId, type: "error", content: errorMsg)
                     if let self = self, let idx = self.sessions.firstIndex(where: { $0.id == sessionId }) {
                         self.sessions[idx].status = .failed
+                        self.persistMetadata()
                     }
                 }
             }
@@ -321,16 +397,16 @@ class AgentMonitor: ObservableObject {
         ))
         sessions[idx].lastActivity = Date()
         lastUpdate = Date()
+        markOutputDirty(sessionId)
     }
 
     private func appendOrUpdateAssistant(sessionId: String, text: String) {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
-        // If the last line is an assistant message, append to it (streaming delta)
         if let lastIdx = sessions[idx].outputLines.indices.last,
            sessions[idx].outputLines[lastIdx].type == "assistant" {
             let existing = sessions[idx].outputLines[lastIdx]
             sessions[idx].outputLines[lastIdx] = AgentSession.OutputLine(
-                timestamp: existing.timestamp, type: "assistant", content: existing.content + text
+                id: existing.id, timestamp: existing.timestamp, type: "assistant", content: existing.content + text
             )
         } else {
             sessions[idx].outputLines.append(AgentSession.OutputLine(
@@ -338,11 +414,70 @@ class AgentMonitor: ObservableObject {
             ))
         }
         sessions[idx].lastActivity = Date()
+        markOutputDirty(sessionId)
     }
 
     private func updateSessionId(internalId: String, claudeSessionId: String) {
         if let idx = sessions.firstIndex(where: { $0.id == internalId }) {
             sessions[idx].sessionId = claudeSessionId
+            persistMetadata()
+        }
+    }
+
+    // MARK: - Git Diff Capture
+
+    private func runGitCommand(_ args: [String], in dir: String) -> String? {
+        let process = Process()
+        configureProcess(process)
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["git"] + args
+        process.currentDirectoryURL = URL(fileURLWithPath: dir)
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            return nil
+        }
+    }
+
+    private func captureDiff(sessionId: String) {
+        let dir = project.path
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+
+            let unstaged = self.runGitCommand(["diff"], in: dir) ?? ""
+            let staged = self.runGitCommand(["diff", "--cached"], in: dir) ?? ""
+
+            var combined = ""
+            if !unstaged.isEmpty || !staged.isEmpty {
+                if !staged.isEmpty {
+                    combined += "=== Staged Changes ===\n\(staged)\n"
+                }
+                if !unstaged.isEmpty {
+                    combined += "=== Unstaged Changes ===\n\(unstaged)\n"
+                }
+            } else {
+                // Agent may have committed — show last commit diff
+                let lastCommit = self.runGitCommand(["log", "-1", "-p", "--format="], in: dir) ?? ""
+                if !lastCommit.isEmpty {
+                    combined = "=== Last Commit ===\n\(lastCommit)"
+                }
+            }
+
+            guard !combined.isEmpty else { return }
+
+            self.sessionStore.saveDiff(sessionId: sessionId, diff: combined)
+
+            DispatchQueue.main.async {
+                if let idx = self.sessions.firstIndex(where: { $0.id == sessionId }) {
+                    self.sessions[idx].diffOutput = combined
+                }
+            }
         }
     }
 
@@ -361,6 +496,17 @@ class AgentMonitor: ObservableObject {
 
     deinit {
         durationTimer?.invalidate()
+        outputSaveTimer?.invalidate()
+
+        // Sync flush all dirty outputs and mark running as interrupted
+        for i in sessions.indices {
+            if sessions[i].status == .running {
+                sessions[i].status = .interrupted
+            }
+            sessionStore.saveOutputLinesSync(sessionId: sessions[i].id, lines: sessions[i].outputLines)
+        }
+        sessionStore.saveMetadataSync(sessions)
+
         for (_, process) in processes {
             if process.isRunning {
                 process.terminate()

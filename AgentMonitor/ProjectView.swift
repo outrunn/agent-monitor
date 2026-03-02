@@ -6,15 +6,19 @@ struct ProjectView: View {
 
     @StateObject private var monitor: AgentMonitor
     @StateObject private var github: GitHubManager
+    @StateObject private var designManager: IssueDesignManager
     @State private var selectedTab = 0
     @State private var selectedSessionId: String?
     @State private var showingLog = false
+    @State private var showingIssuePicker = false
+    @State private var chainingSession: AgentSession?
 
     init(project: Project, onBack: @escaping () -> Void) {
         self.project = project
         self.onBack = onBack
         _monitor = StateObject(wrappedValue: AgentMonitor(project: project))
         _github = StateObject(wrappedValue: GitHubManager(project: project))
+        _designManager = StateObject(wrappedValue: IssueDesignManager(project: project))
     }
 
     var body: some View {
@@ -49,10 +53,12 @@ struct ProjectView: View {
 
                 Picker("", selection: $selectedTab) {
                     Text("Agents").tag(0)
-                    Text("Issues & Milestones").tag(1)
+                    Text("Issues").tag(1)
+                    Text("Costs").tag(2)
+                    Text("Design").tag(3)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 240)
+                .frame(width: 400)
 
                 Spacer().frame(width: 16)
 
@@ -92,23 +98,110 @@ struct ProjectView: View {
 
             // Tab Content
             if selectedTab == 0 {
-                AgentsTabView(monitor: monitor, onAgentTap: showAgentLog)
-            } else {
+                AgentsTabView(
+                    monitor: monitor,
+                    onAgentTap: showAgentLog,
+                    onCloseAndNext: { session in
+                        handleCloseAndNext(session)
+                    },
+                    onCloseIssue: { session in
+                        handleCloseIssue(session)
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if selectedTab == 1 {
                 IssuesTabView(monitor: monitor, github: github, onAgentTap: showAgentLog)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if selectedTab == 2 {
+                CostDashboardView(monitor: monitor, github: github)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if selectedTab == 3 {
+                IssueDesignView(designManager: designManager, github: github)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .onAppear {
-            github.refresh()
+            monitor.onSessionFinished = { session in
+                // Remove "in progress" label when agent completes or fails
+                if let num = session.issueNumber {
+                    github.removeInProgressLabel(number: num)
+                }
+            }
         }
         .sheet(isPresented: $showingLog) {
             if let sessionId = selectedSessionId {
                 LogView(sessionId: sessionId, monitor: monitor)
             }
         }
+        .sheet(isPresented: $showingIssuePicker) {
+            IssuePickerSheet(
+                github: github,
+                closedIssue: chainingSession.flatMap { session in
+                    session.issueNumber.flatMap { num in
+                        GitHubIssue(number: num, title: "", state: "OPEN", milestone: nil)
+                    }
+                },
+                onPick: { nextIssue in
+                    showingIssuePicker = false
+                    launchAgentForIssue(nextIssue)
+                },
+                onCancel: {
+                    showingIssuePicker = false
+                }
+            )
+        }
     }
 
     private func showAgentLog(_ session: AgentSession) {
         selectedSessionId = session.id
         showingLog = true
+    }
+
+    private func handleCloseIssue(_ session: AgentSession) {
+        guard let issueNumber = session.issueNumber else { return }
+
+        var comment = "Closed via Agent Monitor."
+        if !session.lastAssistantMessage.isEmpty {
+            let summary = String(session.lastAssistantMessage.prefix(500))
+            comment = "Resolved by automated agent.\n\nAgent summary:\n\(summary)"
+        }
+
+        github.closeIssue(number: issueNumber, comment: comment)
+    }
+
+    private func handleCloseAndNext(_ session: AgentSession) {
+        guard let issueNumber = session.issueNumber else { return }
+
+        var comment = "Closed via Agent Monitor."
+        if !session.lastAssistantMessage.isEmpty {
+            let summary = String(session.lastAssistantMessage.prefix(500))
+            comment = "Resolved by automated agent.\n\nAgent summary:\n\(summary)"
+        }
+
+        github.closeIssue(number: issueNumber, comment: comment) { success in
+            if success {
+                chainingSession = session
+                showingIssuePicker = true
+            }
+        }
+    }
+
+    private func launchAgentForIssue(_ issue: GitHubIssue) {
+        github.addInProgressLabel(number: issue.number)
+        github.fetchIssueBody(number: issue.number) { title, body in
+            let issueTitle = title ?? issue.title
+            let issueBody = body ?? ""
+
+            let prompt = """
+            Work on GitHub issue #\(issue.number) in this repository.
+
+            Title: \(issueTitle)
+            Description: \(issueBody)
+
+            Read the codebase, implement the fix, and verify it works.
+            """
+
+            monitor.launchAgent(prompt: prompt)
+        }
     }
 }

@@ -1,0 +1,501 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# agent-cli — CLI tool for managing Claude Code agents and GitHub issues
+# Usage: agent-cli <command> [options]
+
+VERSION="1.0.0"
+STATE_DIR="${HOME}/.agent-monitor"
+
+# --- Helpers ---
+
+die() { echo "error: $*" >&2; exit 1; }
+
+json_escape() {
+    printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()), end="")'
+}
+
+get_project_dir() {
+    local dir="${PROJECT_PATH:-.}"
+    dir="$(cd "$dir" && pwd)"
+    echo "$dir"
+}
+
+get_project_hash() {
+    local dir="$1"
+    echo "$dir" | shasum -a 256 | cut -c1-12
+}
+
+get_state_dir() {
+    local dir
+    dir="$(get_project_dir)"
+    local hash
+    hash="$(get_project_hash "$dir")"
+    local sd="${STATE_DIR}/${hash}"
+    mkdir -p "${sd}/logs"
+    echo "$sd"
+}
+
+get_agents_file() {
+    echo "$(get_state_dir)/agents.json"
+}
+
+ensure_agents_file() {
+    local f
+    f="$(get_agents_file)"
+    if [[ ! -f "$f" ]]; then
+        echo '[]' > "$f"
+    fi
+    echo "$f"
+}
+
+now_iso() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+gen_id() {
+    uuidgen | tr '[:upper:]' '[:lower:]' | cut -c1-8
+}
+
+# Read agents JSON, update a single agent by ID
+update_agent_field() {
+    local agents_file="$1" agent_id="$2" field="$3" value="$4"
+    local tmp="${agents_file}.tmp"
+    jq --arg id "$agent_id" --arg f "$field" --arg v "$value" \
+        'map(if .id == $id then .[$f] = $v else . end)' \
+        "$agents_file" > "$tmp" && mv "$tmp" "$agents_file"
+}
+
+# --- Commands ---
+
+cmd_launch() {
+    local prompt="" issue=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            --issue)   issue="$2"; shift 2 ;;
+            -*)        die "Unknown option: $1" ;;
+            *)         prompt="$1"; shift ;;
+        esac
+    done
+
+    [[ -z "$prompt" ]] && die "Usage: agent-cli launch \"prompt\" [--project PATH] [--issue N]"
+
+    local project_dir state_dir agents_file agent_id log_file
+    project_dir="$(get_project_dir)"
+    state_dir="$(get_state_dir)"
+    agents_file="$(ensure_agents_file)"
+    agent_id="$(gen_id)"
+    log_file="${state_dir}/logs/${agent_id}.jsonl"
+
+    # Launch claude in background
+    cd "$project_dir"
+    claude -p "$prompt" \
+        --output-format stream-json \
+        --verbose \
+        --dangerously-skip-permissions \
+        > "$log_file" 2>&1 &
+    local pid=$!
+
+    # Record agent in state
+    local issue_field=""
+    if [[ -n "$issue" ]]; then
+        issue_field="\"issue\": $issue,"
+    fi
+
+    local now
+    now="$(now_iso)"
+    local entry
+    entry=$(cat <<ENDJSON
+{
+    "id": "${agent_id}",
+    "pid": ${pid},
+    "prompt": $(json_escape "$prompt"),
+    ${issue_field}
+    "status": "running",
+    "startedAt": "${now}",
+    "logFile": "${log_file}",
+    "projectPath": "${project_dir}"
+}
+ENDJSON
+)
+
+    local tmp="${agents_file}.tmp"
+    jq --argjson entry "$entry" '. += [$entry]' "$agents_file" > "$tmp" && mv "$tmp" "$agents_file"
+
+    # Output JSON result
+    echo "$entry" | jq .
+}
+
+cmd_list() {
+    local status_filter="" json_output=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            --status)  status_filter="$2"; shift 2 ;;
+            --json)    json_output=true; shift ;;
+            -*)        die "Unknown option: $1" ;;
+            *)         shift ;;
+        esac
+    done
+
+    local agents_file
+    agents_file="$(ensure_agents_file)"
+
+    # Update status of running agents by checking PIDs
+    _refresh_statuses "$agents_file"
+
+    local data
+    if [[ -n "$status_filter" ]]; then
+        data=$(jq --arg s "$status_filter" '[.[] | select(.status == $s)]' "$agents_file")
+    else
+        data=$(cat "$agents_file")
+    fi
+
+    if $json_output; then
+        echo "$data" | jq .
+    else
+        echo "$data" | jq -r '
+            ["ID", "STATUS", "PID", "ISSUE", "PROMPT"],
+            (.[] | [
+                .id,
+                .status,
+                (.pid | tostring),
+                (.issue // "-" | tostring),
+                (.prompt | if length > 50 then .[0:50] + "..." else . end)
+            ]) | @tsv' | column -t -s $'\t'
+    fi
+}
+
+cmd_status() {
+    local agent_id="${1:-}"
+    [[ -z "$agent_id" ]] && die "Usage: agent-cli status ID"
+    shift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    local agents_file
+    agents_file="$(ensure_agents_file)"
+    _refresh_statuses "$agents_file"
+
+    local agent
+    agent=$(jq --arg id "$agent_id" '.[] | select(.id | startswith($id))' "$agents_file")
+    [[ -z "$agent" ]] && die "Agent not found: $agent_id"
+
+    echo "$agent" | jq .
+
+    # Show last few lines of output
+    local log_file
+    log_file=$(echo "$agent" | jq -r '.logFile')
+    if [[ -f "$log_file" ]]; then
+        echo ""
+        echo "--- Recent output ---"
+        tail -5 "$log_file" | while IFS= read -r line; do
+            local type
+            type=$(echo "$line" | jq -r '.type // "text"' 2>/dev/null || echo "text")
+            case "$type" in
+                assistant)
+                    echo "$line" | jq -r '.message.content[]? | select(.type == "text") | .text' 2>/dev/null || echo "$line"
+                    ;;
+                tool_use)
+                    local tool
+                    tool=$(echo "$line" | jq -r '.tool // .name // "tool"' 2>/dev/null)
+                    echo "  > $tool"
+                    ;;
+                result)
+                    echo "[result] $(echo "$line" | jq -r '.subtype // "done"' 2>/dev/null)"
+                    ;;
+                *)
+                    echo "$line" | head -c 200
+                    ;;
+            esac
+        done
+    fi
+}
+
+cmd_log() {
+    local agent_id="" follow=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --follow|-f) follow=true; shift ;;
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            -*)        die "Unknown option: $1" ;;
+            *)         agent_id="$1"; shift ;;
+        esac
+    done
+
+    [[ -z "$agent_id" ]] && die "Usage: agent-cli log ID [--follow]"
+
+    local agents_file
+    agents_file="$(ensure_agents_file)"
+    local log_file
+    log_file=$(jq -r --arg id "$agent_id" '.[] | select(.id | startswith($id)) | .logFile' "$agents_file")
+    [[ -z "$log_file" || "$log_file" == "null" ]] && die "Agent not found: $agent_id"
+    [[ ! -f "$log_file" ]] && die "Log file not found: $log_file"
+
+    if $follow; then
+        tail -f "$log_file"
+    else
+        cat "$log_file"
+    fi
+}
+
+cmd_stop() {
+    local agent_id="${1:-}"
+    [[ -z "$agent_id" ]] && die "Usage: agent-cli stop ID"
+    shift
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    local agents_file
+    agents_file="$(ensure_agents_file)"
+    local pid
+    pid=$(jq -r --arg id "$agent_id" '.[] | select(.id | startswith($id)) | .pid' "$agents_file")
+    [[ -z "$pid" || "$pid" == "null" ]] && die "Agent not found: $agent_id"
+
+    local full_id
+    full_id=$(jq -r --arg id "$agent_id" '.[] | select(.id | startswith($id)) | .id' "$agents_file")
+
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid"
+        update_agent_field "$agents_file" "$full_id" "status" "stopped"
+        echo "{\"id\": \"$full_id\", \"status\": \"stopped\", \"pid\": $pid}"
+    else
+        update_agent_field "$agents_file" "$full_id" "status" "completed"
+        echo "{\"id\": \"$full_id\", \"status\": \"already_stopped\", \"pid\": $pid}"
+    fi
+}
+
+cmd_resume() {
+    local agent_id="" prompt=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            -*)        die "Unknown option: $1" ;;
+            *)
+                if [[ -z "$agent_id" ]]; then
+                    agent_id="$1"
+                else
+                    prompt="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    [[ -z "$agent_id" || -z "$prompt" ]] && die "Usage: agent-cli resume ID \"follow-up prompt\""
+
+    local agents_file
+    agents_file="$(ensure_agents_file)"
+
+    local full_id log_file project_path
+    full_id=$(jq -r --arg id "$agent_id" '.[] | select(.id | startswith($id)) | .id' "$agents_file")
+    log_file=$(jq -r --arg id "$agent_id" '.[] | select(.id | startswith($id)) | .logFile' "$agents_file")
+    project_path=$(jq -r --arg id "$agent_id" '.[] | select(.id | startswith($id)) | .projectPath' "$agents_file")
+    [[ -z "$full_id" || "$full_id" == "null" ]] && die "Agent not found: $agent_id"
+
+    # Extract session ID from the log
+    local session_id
+    session_id=$(grep -o '"session_id":"[^"]*"' "$log_file" | tail -1 | cut -d'"' -f4)
+    [[ -z "$session_id" ]] && die "No session ID found in agent log. Cannot resume."
+
+    cd "$project_path"
+    claude --resume "$session_id" \
+        -p "$prompt" \
+        --output-format stream-json \
+        --verbose \
+        --dangerously-skip-permissions \
+        >> "$log_file" 2>&1 &
+    local pid=$!
+
+    update_agent_field "$agents_file" "$full_id" "status" "running"
+    update_agent_field "$agents_file" "$full_id" "pid" "$pid"
+
+    echo "{\"id\": \"$full_id\", \"status\": \"running\", \"pid\": $pid, \"session_id\": \"$session_id\"}"
+}
+
+cmd_issues() {
+    local json_output=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            --json)    json_output=true; shift ;;
+            -*)        die "Unknown option: $1" ;;
+            *)         shift ;;
+        esac
+    done
+
+    local project_dir
+    project_dir="$(get_project_dir)"
+    cd "$project_dir"
+
+    local data
+    data=$(gh issue list --json number,title,state,milestone,labels --limit 200)
+
+    if $json_output; then
+        echo "$data" | jq .
+    else
+        echo "$data" | jq -r '
+            ["#", "TITLE", "MILESTONE", "STATE"],
+            (.[] | [
+                (.number | tostring),
+                (.title | if length > 60 then .[0:60] + "..." else . end),
+                (.milestone.title // "-"),
+                .state
+            ]) | @tsv' | column -t -s $'\t'
+    fi
+}
+
+cmd_assign() {
+    local issue_number=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            -*)        die "Unknown option: $1" ;;
+            *)         issue_number="$1"; shift ;;
+        esac
+    done
+
+    [[ -z "$issue_number" ]] && die "Usage: agent-cli assign ISSUE_NUMBER [--project PATH]"
+
+    local project_dir
+    project_dir="$(get_project_dir)"
+    cd "$project_dir"
+
+    # Fetch issue details
+    local issue_json
+    issue_json=$(gh issue view "$issue_number" --json title,body,labels)
+    local title body
+    title=$(echo "$issue_json" | jq -r '.title')
+    body=$(echo "$issue_json" | jq -r '.body // ""')
+
+    local prompt
+    prompt="Work on GitHub issue #${issue_number} in this repository.
+
+Title: ${title}
+Description: ${body}
+
+Read the codebase, implement the fix, and verify it works."
+
+    PROJECT_PATH="$project_dir" cmd_launch "$prompt" --issue "$issue_number"
+}
+
+cmd_close_issue() {
+    local issue_number="" comment=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) PROJECT_PATH="$2"; shift 2 ;;
+            --comment) comment="$2"; shift 2 ;;
+            -*)        die "Unknown option: $1" ;;
+            *)         issue_number="$1"; shift ;;
+        esac
+    done
+
+    [[ -z "$issue_number" ]] && die "Usage: agent-cli close-issue ISSUE_NUMBER [--comment \"text\"] [--project PATH]"
+
+    local project_dir
+    project_dir="$(get_project_dir)"
+    cd "$project_dir"
+
+    local args=("gh" "issue" "close" "$issue_number")
+    if [[ -n "$comment" ]]; then
+        args+=("--comment" "$comment")
+    fi
+
+    "${args[@]}"
+    echo "{\"issue\": $issue_number, \"status\": \"closed\"}"
+}
+
+# --- Status refresh ---
+
+_refresh_statuses() {
+    local agents_file="$1"
+    local tmp="${agents_file}.tmp"
+
+    jq -c '.[]' "$agents_file" | while IFS= read -r agent; do
+        local status pid id
+        status=$(echo "$agent" | jq -r '.status')
+        pid=$(echo "$agent" | jq -r '.pid')
+        id=$(echo "$agent" | jq -r '.id')
+
+        if [[ "$status" == "running" ]] && ! kill -0 "$pid" 2>/dev/null; then
+            update_agent_field "$agents_file" "$id" "status" "completed"
+        fi
+    done
+}
+
+# --- Main ---
+
+cmd_help() {
+    cat <<'EOF'
+agent-cli — CLI tool for managing Claude Code agents
+
+Usage: agent-cli <command> [options]
+
+Commands:
+  launch "prompt" [--project PATH] [--issue N]
+      Launch a Claude Code agent. Returns JSON with agent metadata.
+
+  list [--project PATH] [--status running|completed|failed] [--json]
+      List agents. Default: human-readable table. --json for machine parsing.
+
+  status ID [--project PATH]
+      Get status and latest output for an agent.
+
+  log ID [--follow] [--project PATH]
+      Show full agent output. --follow streams in real time.
+
+  stop ID [--project PATH]
+      Stop a running agent (SIGTERM).
+
+  resume ID "follow-up prompt" [--project PATH]
+      Send follow-up to a completed agent session.
+
+  issues [--project PATH] [--json]
+      List open GitHub issues via gh CLI.
+
+  assign ISSUE_NUMBER [--project PATH]
+      Fetch issue details and launch a Claude agent to work on it.
+
+  close-issue ISSUE_NUMBER [--comment "text"] [--project PATH]
+      Close a GitHub issue.
+
+  help
+      Show this help message.
+
+Environment:
+  PROJECT_PATH    Default project directory (default: current directory)
+
+State is stored in ~/.agent-monitor/<project-hash>/
+EOF
+}
+
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    case "$cmd" in
+        launch)      cmd_launch "$@" ;;
+        list|ls)     cmd_list "$@" ;;
+        status)      cmd_status "$@" ;;
+        log|logs)    cmd_log "$@" ;;
+        stop|kill)   cmd_stop "$@" ;;
+        resume)      cmd_resume "$@" ;;
+        issues)      cmd_issues "$@" ;;
+        assign)      cmd_assign "$@" ;;
+        close-issue) cmd_close_issue "$@" ;;
+        help|--help|-h) cmd_help ;;
+        version|--version|-v) echo "agent-cli $VERSION" ;;
+        *)           die "Unknown command: $cmd. Run 'agent-cli help' for usage." ;;
+    esac
+}
+
+main "$@"

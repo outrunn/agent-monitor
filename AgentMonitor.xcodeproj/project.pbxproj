@@ -14,6 +14,7 @@
 		B1000001000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000002000000000000001 /* Models.swift */; };
 		B1000003000000000000001 /* Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000004000000000000001 /* Helpers.swift */; };
 		B1000005000000000000001 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000006000000000000001 /* ProjectStore.swift */; };
+		B1000021000000000000001 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022000000000000001 /* SessionStore.swift */; };
 		B1000007000000000000001 /* ProjectLauncherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000008000000000000001 /* ProjectLauncherView.swift */; };
 		B1000009000000000000001 /* ProjectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010000000000000001 /* ProjectView.swift */; };
 		B1000011000000000000001 /* AgentsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012000000000000001 /* AgentsTabView.swift */; };
@@ -21,6 +22,11 @@
 		B1000015000000000000001 /* AgentCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000016000000000000001 /* AgentCardViews.swift */; };
 		B1000017000000000000001 /* MilestoneViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000018000000000000001 /* MilestoneViews.swift */; };
 		B1000019000000000000001 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020000000000000001 /* LogView.swift */; };
+		C1000001000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000002000000000000001 /* NotificationManager.swift */; };
+		C1000003000000000000001 /* DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000004000000000000001 /* DiffView.swift */; };
+		C1000005000000000000001 /* CostDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000006000000000000001 /* CostDashboardView.swift */; };
+		C1000007000000000000001 /* IssueDesignManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000008000000000000001 /* IssueDesignManager.swift */; };
+		C1000009000000000000001 /* IssueDesignView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1000010000000000000001 /* IssueDesignView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +38,7 @@
 		B1000002000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		B1000004000000000000001 /* Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Helpers.swift; sourceTree = "<group>"; };
 		B1000006000000000000001 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
+		B1000022000000000000001 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		B1000008000000000000001 /* ProjectLauncherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLauncherView.swift; sourceTree = "<group>"; };
 		B1000010000000000000001 /* ProjectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectView.swift; sourceTree = "<group>"; };
 		B1000012000000000000001 /* AgentsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsTabView.swift; sourceTree = "<group>"; };
@@ -39,6 +46,11 @@
 		B1000016000000000000001 /* AgentCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCardViews.swift; sourceTree = "<group>"; };
 		B1000018000000000000001 /* MilestoneViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MilestoneViews.swift; sourceTree = "<group>"; };
 		B1000020000000000000001 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
+		C1000002000000000000001 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		C1000004000000000000001 /* DiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffView.swift; sourceTree = "<group>"; };
+		C1000006000000000000001 /* CostDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostDashboardView.swift; sourceTree = "<group>"; };
+		C1000008000000000000001 /* IssueDesignManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueDesignManager.swift; sourceTree = "<group>"; };
+		C1000010000000000000001 /* IssueDesignView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueDesignView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +79,7 @@
 				B1000002000000000000001 /* Models.swift */,
 				B1000004000000000000001 /* Helpers.swift */,
 				B1000006000000000000001 /* ProjectStore.swift */,
+				B1000022000000000000001 /* SessionStore.swift */,
 				A1000006000000000000001 /* AgentMonitor.swift */,
 				A1000025000000000000001 /* GitHubManager.swift */,
 				B1000008000000000000001 /* ProjectLauncherView.swift */,
@@ -76,6 +89,11 @@
 				B1000016000000000000001 /* AgentCardViews.swift */,
 				B1000018000000000000001 /* MilestoneViews.swift */,
 				B1000020000000000000001 /* LogView.swift */,
+				C1000002000000000000001 /* NotificationManager.swift */,
+				C1000004000000000000001 /* DiffView.swift */,
+				C1000006000000000000001 /* CostDashboardView.swift */,
+				C1000008000000000000001 /* IssueDesignManager.swift */,
+				C1000010000000000000001 /* IssueDesignView.swift */,
 				A1000008000000000000001 /* Assets.xcassets */,
 			);
 			path = AgentMonitor;
@@ -157,6 +175,7 @@
 				B1000001000000000000001 /* Models.swift in Sources */,
 				B1000003000000000000001 /* Helpers.swift in Sources */,
 				B1000005000000000000001 /* ProjectStore.swift in Sources */,
+				B1000021000000000000001 /* SessionStore.swift in Sources */,
 				A1000005000000000000001 /* AgentMonitor.swift in Sources */,
 				A1000024000000000000001 /* GitHubManager.swift in Sources */,
 				B1000007000000000000001 /* ProjectLauncherView.swift in Sources */,
@@ -166,6 +185,11 @@
 				B1000015000000000000001 /* AgentCardViews.swift in Sources */,
 				B1000017000000000000001 /* MilestoneViews.swift in Sources */,
 				B1000019000000000000001 /* LogView.swift in Sources */,
+				C1000001000000000000001 /* NotificationManager.swift in Sources */,
+				C1000003000000000000001 /* DiffView.swift in Sources */,
+				C1000005000000000000001 /* CostDashboardView.swift in Sources */,
+				C1000007000000000000001 /* IssueDesignManager.swift in Sources */,
+				C1000009000000000000001 /* IssueDesignView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
