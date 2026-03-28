@@ -1,166 +1,66 @@
-# Agent Monitor v2
+# Agent Monitor
 
-A beautiful native macOS app for monitoring Claude Code agents working on your Roblox game project - now with **GitHub integration**!
+A native macOS app for managing and orchestrating AI coding agents. Launch Claude Code sessions, track progress against GitHub issues, monitor costs, and view real-time logs — all from one interface.
 
-## ✨ What's New in v2
+![macOS](https://img.shields.io/badge/macOS-13.0+-black?style=flat-square&logo=apple)
+![Swift](https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/SwiftUI-blue?style=flat-square)
+![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square)
 
-### GitHub Integration
-- 🎯 **Milestone tracking** with visual progress bars
-- 📋 **Issue organization** grouped by milestone
-- 🔗 **Agent-to-issue mapping** showing who's working on what
-- 📊 **Two-panel dashboard** for complete project visibility
+<!-- Add screenshot here: ![Agent Monitor](screenshot.png) -->
 
-See [GITHUB-INTEGRATION.md](GITHUB-INTEGRATION.md) for details.
+## What It Does
 
-## 🚀 Features
+**Agent Monitor** turns multi-agent AI development from chaos into a dashboard. Instead of juggling terminal windows, you get:
 
-### Real-Time Agent Monitoring
-- **Auto-refreshes** every 3 seconds
-- **Color-coded status** (Green = running, Red = failed, Blue = completed)
-- **Agent details:** ID, GitHub issue, task, duration
-- **Live logs:** Click any agent to view full output
+- **Launch & track agents** from a unified interface with real-time status (running/completed/failed)
+- **GitHub integration** — milestones, issues, and progress bars sync automatically; agents auto-link to the issues they're working on
+- **Live log streaming** — click any agent to see its full output as it works
+- **Cost tracking** — per-session and per-milestone API cost breakdowns
+- **Multi-project support** — switch between projects instantly
 
-### GitHub Project Dashboard
-- **Milestones** with progress indicators
-- **Open issues** organized by milestone
-- **Visual connections** between agents and issues
-- **Unassigned issues** highlighted separately
+## Architecture
 
-### Dual View Modes
-- **Dashboard Mode:** Milestones → Issues → Agents hierarchy
-- **Agents Mode:** Traditional agent list view
-- Toggle between modes with segmented control
-
-### Native macOS Experience
-- Beautiful SwiftUI interface
-- Dark mode support
-- Smooth animations
-- Zero configuration needed
-
-## 🏗️ Building
-
-### Quick Start
-```bash
-cd ~/Dev/tools/agent-monitor
-./open-in-xcode.sh
-# Click Play (▶️) in Xcode
+```
+AgentMonitor
+├── Core (Models, AgentMonitor, SessionStore, ProjectStore)
+├── Managers (GitHubManager, IssueDesignManager, NotificationManager)
+└── Views (SwiftUI — ProjectView, AgentsTab, IssuesTab, LogView, CostDashboard)
 ```
 
-### Command Line Build
-```bash
-./build.sh
-open build/Build/Products/Release/AgentMonitor.app
-```
+**Pure Foundation + SwiftUI. Zero external dependencies.** All integrations (Claude Code CLI, GitHub CLI) via subprocess execution — lightweight, extensible, ~4.6MB compiled.
 
-## 📊 What You'll See
+## Key Technical Decisions
 
-### Dashboard View
-**Left Panel:**
-- Milestones with progress bars
-- Issues grouped by milestone
-- Agent badges showing assignments
+**Real-time JSONL stream parsing** — Agent output is parsed line-by-line on a background thread, differentiating between assistant messages, tool calls, and system events. UI updates reactively via Combine.
 
-**Right Panel:**
-- Active agents list
-- Quick status overview
-- One-click log access
+**Dual-timer architecture** — Agent status refreshes every 3 seconds (fast feedback), GitHub data every 120 seconds (API-friendly). Both non-blocking.
 
-### Agents View
-- Detailed agent cards
-- Status, task, duration
-- GitHub issue numbers
-- Full log viewer
+**Smart agent-to-issue mapping** — Regex extracts issue numbers from agent prompts and automatically links running agents to their GitHub issues with visual badges.
 
-## 🛠️ Requirements
+**Session persistence** — Metadata and logs split into separate stores. Sessions survive app restarts. Atomic writes prevent corruption.
 
-- **macOS 13.0+** (Ventura or later)
-- **Xcode** (for building)
-- **OpenClaw** installed and in PATH
-- **GitHub CLI** (`gh`) for GitHub integration
-  ```bash
-  brew install gh
-  gh auth login
-  ```
+## Tech Stack
 
-## 📚 Documentation
+| | |
+|-|-|
+| **Language** | Swift 5.9+ with async/await |
+| **UI** | SwiftUI (native macOS) |
+| **State** | Combine + @Published reactive bindings |
+| **Persistence** | Codable + FileManager (JSON) |
+| **Integrations** | Claude Code CLI, GitHub CLI (subprocess) |
+| **Size** | ~4,600 lines of Swift | 0 external dependencies |
 
-- **[START-HERE.md](START-HERE.md)** - Quick 3-step start guide
-- **[QUICKSTART.md](QUICKSTART.md)** - Detailed instructions
-- **[GITHUB-INTEGRATION.md](GITHUB-INTEGRATION.md)** - GitHub features explained
-- **[FEATURES-V2.md](FEATURES-V2.md)** - Complete feature list
-- **[SUMMARY.md](SUMMARY.md)** - Technical architecture
-- **[APP-PREVIEW.md](APP-PREVIEW.md)** - UI walkthrough
-
-## 🎯 Use Cases
-
-### "How's my project progressing?"
-→ See milestone progress bars and issue counts
-
-### "Which agents are working on which issues?"
-→ Visual badges show agent assignments
-
-### "Why did that agent fail?"
-→ Click the red badge to see full logs
-
-### "What issues need attention?"
-→ Check unassigned issues section
-
-## 💡 Visual Indicators
-
-### Milestone Progress
-- 🟢 **Green** (70%+) - Almost done!
-- 🟠 **Orange** (40-70%) - In progress
-- 🔵 **Blue** (<40%) - Just started
-
-### Agent Status
-- 🟢 **Green circle** - Currently working
-- 🔴 **Red circle** - Failed, needs attention
-- 🔵 **Blue circle** - Completed
-
-### Issue Highlighting
-- Light green background = Agent assigned
-- Color-coded badges = Agent status
-- Purple tags = Issue numbers
-
-## 🚀 Quick Launch
+## Getting Started
 
 ```bash
-cd ~/Dev/tools/agent-monitor
-./RUN-ME-FIRST.sh  # Interactive menu
+git clone https://github.com/outrunn/agent-monitor.git
+cd agent-monitor
+./run.sh
 ```
 
-Or:
+Requires: macOS 13+, Xcode 14+, Claude Code CLI, GitHub CLI (`gh`)
 
-```bash
-./open-in-xcode.sh  # Direct to Xcode
-```
+## License
 
-## 🔧 Configuration
-
-Currently monitors:
-- **Repository:** `~/Dev/games/roblox/mine-for-brainrots`
-- **Processes:** All OpenClaw sessions
-- **Refresh:** Every 3 seconds
-
-To change the repository path, edit `GitHubManager.swift`.
-
-## 🎉 Benefits
-
-**Before v2:**
-- ✅ See what agents are doing
-- ❌ No project context
-- ❌ No milestone tracking
-- ❌ Manual issue checking
-
-**After v2:**
-- ✅ See what agents are doing
-- ✅ Full project overview
-- ✅ Milestone progress tracking
-- ✅ Agent-to-issue mapping
-- ✅ Complete visibility
-
----
-
-Built with ❤️ for stress-free autonomous coding.
-
-**v2.0** - Now with GitHub integration for complete project visibility!
+MIT
